@@ -1,6 +1,6 @@
 #!/bin/bash 
 
-set -e
+set -ex
 
 function install_nix {
   # Source: https://github.com/cachix/install-nix-action/blob/master/lib/install-nix.sh
@@ -24,14 +24,8 @@ function install_nix {
     --daemon-user-count 4
     --darwin-use-unencrypted-nix-store-volume
     --nix-extra-conf-file /tmp/nix.conf
+    --no-channel-add
   )
-
-  INPUT_NIX_PATH="nixpkgs=channel:$INPUT_NIX_VERSION"
-  if [[ "$INPUT_NIX_PATH" != "" ]]; then
-    installer_options+=(--no-channel-add)
-  else
-    INPUT_NIX_PATH="/nix/var/nix/profiles/per-user/root/channels"
-  fi
 
   sh <(curl --silent --retry 5 --retry-connrefused -L "${INPUT_INSTALL_URL:-https://nixos.org/nix/install}") \
     "${installer_options[@]}"
@@ -52,8 +46,12 @@ function install_via_nix {
   if [[ -f "$INPUT_NIX_FILE" ]]; then
     # Path is set correctly by set_paths but that is only available outside of this Action.
     PATH=/nix/var/nix/profiles/default/bin/:$PATH
+    if [[ -n "$INPUT_NIX_VERSION" ]]; then
+        nix-channel --add "https://nixos.org/channels/${INPUT_NIX_VERSION}" nixpkgs
+        nix-channel --update
+    fi
     nix-env --install --file "$INPUT_NIX_FILE"
-  else 
+  else
     echo "File at nix_file does not exist"
     exit 1
   fi
@@ -65,12 +63,7 @@ function set_paths {
 }
 
 function set_nix_path {
-  INPUT_NIX_PATH="nixpkgs=channel:$INPUT_NIX_VERSION"
-  if [[ "$INPUT_NIX_PATH" != "" ]]; then
-    installer_options+=(--no-channel-add)
-  else
-    INPUT_NIX_PATH="/nix/var/nix/profiles/per-user/root/channels"
-  fi
+  INPUT_NIX_PATH="/nix/var/nix/profiles/per-user/${USER}/channels"
   echo "NIX_PATH=${INPUT_NIX_PATH}" >> $GITHUB_ENV
 }
 
