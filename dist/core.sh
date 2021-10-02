@@ -52,6 +52,11 @@ function install_via_nix {
   if [[ -f "$INPUT_NIX_FILE" ]]; then
     # Path is set correctly by set_paths but that is only available outside of this Action.
     PATH=/nix/var/nix/profiles/default/bin/:$PATH
+    # NIX_PATH set correctly by set_nix_path, but that is only
+    # available outside of this Action
+    # When INPUT_NIX_VERSION is a URL, nix-env is confused by the
+    # colon separated path, so remove "channel"
+    export NIX_PATH="nixpkgs=$INPUT_NIX_VERSION"
     nix-env --install --file "$INPUT_NIX_FILE"
   else 
     echo "File at nix_file does not exist"
