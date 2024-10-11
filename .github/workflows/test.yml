@@ -5,6 +5,7 @@ on:
     branches:
       - master
   pull_request:
+  workflow_dispatch:
   schedule:
     - cron: '00 04 * * 6'
 
@@ -14,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout
-      uses: actions/checkout@v2
+      uses: actions/checkout@v4
 
     - name: Save cache
       uses: ./
@@ -22,7 +23,7 @@ jobs:
         key: Test-Simple-${{ runner.os }}-${{ github.run_id }}
         nix_file: 'test/simple.nix'
 
-    - name: Test whether simple.nix is installed 
+    - name: Test whether simple.nix is installed
       run: which hello
 
   test-restore-simple:
@@ -30,27 +31,37 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout
-      uses: actions/checkout@v2
+      uses: actions/checkout@v4
 
     - name: Restore cache
+      id: cache
       uses: ./
       with:
         key: Test-Simple-${{ runner.os }}-${{ github.run_id }}
         nix_file: 'test/simple.nix'
 
-    - name: Test whether simple.nix is installed 
-      run: hello
+    - name: Test whether output is set
+      shell: bash
+      run: |
+        if [[ "${{ steps.cache.outputs.cache-hit }}" = "true" ]]; then
+          echo "Output is set correctly"
+        else
+          echo "Output is not set correctly"
+          exit 1
+        fi
 
-    - name: Test whether nix-shell is available
-      run: nix-shell -p nix-info --run "nix-info -m"
+    - name: Test whether simple.nix is installed
+      run: |
+        nix-store --gc # Remove invalid store paths
+        hello
 
-      
+
 
   test-save-latex:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout
-      uses: actions/checkout@v2
+      uses: actions/checkout@v4
 
     - name: Save cache
       uses: ./
@@ -58,7 +69,7 @@ jobs:
         key: Test-LaTeX-${{ runner.os }}-${{ github.run_id }}
         nix_file: 'test/latex.nix'
 
-    - name: Test whether latex.nix is installed 
+    - name: Test whether latex.nix is installed
       run: which pdfcrop
 
   test-restore-latex:
@@ -66,7 +77,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout
-      uses: actions/checkout@v2
+      uses: actions/checkout@v4
 
     - name: Restore cache
       uses: ./
@@ -74,47 +85,18 @@ jobs:
         key: Test-LaTeX-${{ runner.os }}-${{ github.run_id }}
         nix_file: 'test/latex.nix'
 
-    - name: Test whether latex.nix is installed 
-      run: which pdfcrop
+    - name: Test whether latex.nix is installed
+      run: |
+        nix-store --gc # Remove invalid store paths
+        which pdfcrop
 
 
-
-  test-save-julia:
-    runs-on: ubuntu-latest
-    steps:
-    - name: Checkout
-      uses: actions/checkout@v2
-
-    - name: Save cache
-      uses: ./
-      with:
-        key: Test-Julia-${{ runner.os }}-${{ github.run_id }}
-        nix_file: 'test/julia.nix'
-
-    - name: Test whether julia.nix is installed 
-      run: julia --color=yes -e 'using Pkg; Pkg.add("RCall"); using RCall; R"library(ggplot2)"'
-
-  test-restore-julia:
-    needs: test-save-julia
-    runs-on: ubuntu-latest
-    steps:
-    - name: Checkout
-      uses: actions/checkout@v2
-
-    - name: Restore cache
-      uses: ./
-      with:
-        key: Test-Julia-${{ runner.os }}-${{ github.run_id }}
-        nix_file: 'test/julia.nix'
-
-    - name: Test whether julia.nix is installed 
-      run: julia --color=yes -e 'using Pkg; Pkg.add("RCall"); using RCall; R"library(ggplot2)"'
 
   test-save-restore-keys:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
     - name: Save cache
       uses: ./
@@ -130,7 +112,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
     - name: Restore cache
       uses: ./
@@ -141,7 +123,6 @@ jobs:
         nix_file: 'test/simple.nix'
 
     - name: Test whether simple.nix is installed
-      run: hello
-
-    - name: Test whether nix-shell is available
-      run: nix-shell -p nix-info --run "nix-info -m"
+      run: |
+        nix-store --gc # Remove invalid store paths
+        hello

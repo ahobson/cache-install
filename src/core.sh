@@ -1,8 +1,9 @@
-#!/bin/bash 
+#!/bin/bash
 
 set -e
 
 function install_nix {
+  echo "Running install_nix from core.sh"
   # Source: https://github.com/cachix/install-nix-action/blob/master/lib/install-nix.sh
   if [ -d "/nix/store" ]; then
       echo "The folder /nix/store exists; assuming Nix was restored from cache"
@@ -33,8 +34,12 @@ function install_nix {
     INPUT_NIX_PATH="/nix/var/nix/profiles/per-user/root/channels"
   fi
 
-  sh <(curl --silent --retry 5 --retry-connrefused -L "${INPUT_INSTALL_URL:-https://nixos.org/nix/install}") \
+  sh <(curl --silent --retry 5 --retry-connrefused -L "${INPUT_NIX_INSTALL_URL}") \
     "${installer_options[@]}"
+
+  # Create the user profile
+  sudo mkdir "/nix/var/nix/profiles/per-user/$USER"
+  sudo chown $USER "/nix/var/nix/profiles/per-user/$USER"
 
   if [[ $OSTYPE =~ darwin ]]; then
     # Disable spotlight indexing of /nix to speed up performance
@@ -49,6 +54,8 @@ function install_nix {
 }
 
 function install_via_nix {
+  echo "Running install_via_nix from core.sh"
+
   if [[ -f "$INPUT_NIX_FILE" ]]; then
     # Path is set correctly by set_paths but that is only available outside of this Action.
     PATH=/nix/var/nix/profiles/default/bin/:$PATH
@@ -58,18 +65,33 @@ function install_via_nix {
     # colon separated path, so remove "channel"
     export NIX_PATH="nixpkgs=$INPUT_NIX_VERSION"
     nix-env --install --file "$INPUT_NIX_FILE"
-  else 
+  else
     echo "File at nix_file does not exist"
     exit 1
   fi
 }
 
 function set_paths {
+  echo "Running set_paths from core.sh"
+
   echo "/nix/var/nix/profiles/per-user/$USER/profile/bin" >> $GITHUB_PATH
   echo "/nix/var/nix/profiles/default/bin" >> $GITHUB_PATH
+  echo "/home/$USER/.nix-profile/bin" >> $GITHUB_PATH
+}
+
+function set_nix_profile_symlink {
+  echo "Running set_nix_profile_symlink from core.sh"
+
+  NIX_PROFILE_DIR="/home/$USER/.nix-profile"
+  if [ -d "$NIX_PROFILE_DIR" ]; then
+      sudo rm -rf "$NIX_PROFILE_DIR"
+  fi
+  ln -v -s "/nix/var/nix/profiles/per-user/$USER/profile" "$NIX_PROFILE_DIR"
 }
 
 function set_nix_path {
+  echo "Running set_nix_path from core.sh"
+
   INPUT_NIX_PATH="nixpkgs=channel:$INPUT_NIX_VERSION"
   if [[ "$INPUT_NIX_PATH" != "" ]]; then
     installer_options+=(--no-channel-add)
@@ -80,12 +102,23 @@ function set_nix_path {
 }
 
 function prepare {
+  echo "Running prepare from core.sh"
+
   sudo mkdir -p --verbose /nix
-  sudo chown --verbose "$USER:" /nix 
+  sudo chown --verbose "$USER:" /nix
 }
 
 function undo_prepare {
+  echo "Running undo_prepare from core.sh"
+
   sudo rm -rf /nix
+}
+
+function clean_nix_store {
+  PATH=/nix/var/nix/profiles/default/bin/:$PATH
+
+  nix-store --gc
+  nix-store --optimise
 }
 
 TASK="$1"
@@ -96,12 +129,15 @@ elif [ "$TASK" == "install-with-nix" ]; then
   set_nix_path
   install_nix
   set_paths
+  set_nix_profile_symlink
   install_via_nix
 elif [ "$TASK" == "install-from-cache" ]; then
   set_nix_path
   set_paths
+  set_nix_profile_symlink
 elif [ "$TASK" == "prepare-save" ]; then
   prepare
+  clean_nix_store
 else
   echo "Unknown argument given to core.sh: $TASK"
   exit 1

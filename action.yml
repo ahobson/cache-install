@@ -1,6 +1,10 @@
 name: 'Cache install Nix packages'
 description: 'Use the GitHub Actions cache for Nix packages'
 author: 'Rik Huijzer'
+branding:
+  icon: 'arrow-down'
+  color: 'blue'
+
 inputs:
   key:
     description: 'An explicit key for restoring and saving the cache'
@@ -14,12 +18,74 @@ inputs:
   nix_file:
     description: 'Nix file, defaults to `default.nix`.'
     default: 'default.nix'
+  nix_install_url:
+    description: 'Install URL for the Nix package manager; obtain newest via https://nixos.org/nix/install.'
+    default: 'https://releases.nixos.org/nix/nix-2.19.1/install'
+
 outputs:
   cache-hit:
     description: 'A boolean value to indicate an exact match was found for the primary key'
+    value: ${{ steps.hit.outputs.cache-hit }}
+
 runs:
-  using: 'node16'
-  main: 'dist/index.js'
-branding:
-  icon: 'arrow-down'
-  color: 'blue'
+  using: 'composite'
+  steps:
+    - name: Prepare for restoring cache
+      shell: bash
+      run: $GITHUB_ACTION_PATH/src/core.sh "prepare-restore"
+
+    - name: Pass USER to GitHub Action
+      id: user
+      shell: bash
+      run: echo "USER=$USER" >> $GITHUB_ENV
+
+    - name: Restore cache
+      id: cache
+      uses: actions/cache/restore@v4
+      with:
+        path: |
+          /nix/store/
+          /nix/var/nix/db/db.sqlite
+          /nix/var/nix/db/schema
+          /nix/var/nix/profiles/per-user/${{ env.USER }}/profile/bin/
+          /nix/var/nix/profiles/default/bin/
+          /nix/var/nix/profiles/per-user/root/channels/
+          /home/${{ env.USER }}/.nix-profile/bin/
+        key: ${{ inputs.key }}
+        restore-keys: ${{ inputs.restore-keys }}
+
+    - name: Install with cache
+      if: steps.cache.outputs.cache-hit == 'true'
+      shell: bash
+      run: $GITHUB_ACTION_PATH/src/core.sh "install-from-cache"
+
+    - name: Install without cache
+      # Use `!= 'true'` because `cache-hit` is not set if no cache was restored.
+      if: steps.cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+          $GITHUB_ACTION_PATH/src/core.sh "install-with-nix"
+          $GITHUB_ACTION_PATH/src/core.sh "prepare-save"
+      env:
+        INPUT_NIX_FILE: ${{ inputs.nix_file }}
+        INPUT_NIX_VERSION: ${{ inputs.nix_version }}
+        INPUT_NIX_INSTALL_URL: ${{ inputs.nix_install_url }}
+
+    - name: Save cache
+      if: steps.cache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: |
+          /nix/store/
+          /nix/var/nix/db/db.sqlite
+          /nix/var/nix/db/schema
+          /nix/var/nix/profiles/per-user/${{ env.USER }}/profile/bin/
+          /nix/var/nix/profiles/default/bin/
+          /nix/var/nix/profiles/per-user/root/channels/
+          /home/${{ env.USER }}/.nix-profile/bin/
+        key: ${{ inputs.key }}
+
+    - name: Set cache-hit output
+      id: hit
+      shell: bash
+      run: echo "cache-hit=${{ steps.cache.outputs.cache-hit }}" >> $GITHUB_OUTPUT
